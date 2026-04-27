@@ -80,7 +80,7 @@ class ActorCritic_DWAQ(nn.Module):
         code = mean + var*code_temp
         return code
     
-    def cenet_forward(self,obs_history):
+    def cenet_forward(self,obs_history, deterministic=False):
         distribution = self.encoder(obs_history)
         mean_latent = self.encode_mean_latent(distribution)
         logvar_latent = self.encode_logvar_latent(distribution)
@@ -89,9 +89,13 @@ class ActorCritic_DWAQ(nn.Module):
         # code = mean_latent + var*code_temp
         # print("latent : ",code[0])
         mean_vel = self.encode_mean_vel(distribution)
-        logvar_vel = self.encode_mean_vel(distribution)
-        code_latent = self.reparameterise(mean_latent,logvar_latent)
-        code_vel = self.reparameterise(mean_vel,logvar_vel)
+        logvar_vel = self.encode_logvar_vel(distribution)
+        if deterministic:
+            code_latent = mean_latent
+            code_vel = mean_vel
+        else:
+            code_latent = self.reparameterise(mean_latent,logvar_latent)
+            code_vel = self.reparameterise(mean_vel,logvar_vel)
         code = torch.cat((code_vel,code_latent),dim=-1)
         decode = self.decoder(code)
         return code,code_vel,decode,mean_vel,logvar_vel,mean_latent,logvar_latent
@@ -113,7 +117,7 @@ class ActorCritic_DWAQ(nn.Module):
         self.distribution = Normal(mean, mean * 0.0 + self.std)
 
     def act(self, observations, obs_history, **kwargs):
-        code,_,decode,_,_,_,_ = self.cenet_forward(obs_history)
+        code,_,decode,_,_,_,_ = self.cenet_forward(obs_history, deterministic=False)
         observations = torch.cat((code,observations),dim=-1)
         self.update_distribution(observations)
         return self.distribution.sample()
@@ -122,7 +126,7 @@ class ActorCritic_DWAQ(nn.Module):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
     def act_inference(self, observations,obs_history):
-        code,_,decode,_,_,_,_ = self.cenet_forward(obs_history)
+        code,_,decode,_,_,_,_ = self.cenet_forward(obs_history, deterministic=True)
         observations = torch.cat((code,observations),dim=-1)
         actions_mean = self.actor(observations)
         return actions_mean
